@@ -29,7 +29,7 @@ echo "Memory allocated: 150GB"
 echo "=========================================="
 
 # Run Python script
-python /home/chengr/Variant-Effect-Prediction/variant_filtering.py
+python /home/chengr/Capstone/variant_effect_prediction/Variant-Effect-Prediction/phyloP_distribution.py
 echo "=========================================="
 echo "Job completed at: $(date)"
 echo "=========================================="

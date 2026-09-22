@@ -1,0 +1,3 @@
+Chromosome,Position,Ref,Alt,Tags,DNA,RNA,Value,P-Value,Element,phyloP447,conservation_level
+X,139530608,C,T,871,26885,15377,-0.06,0.02176,F9,0.823,human_chimp
+1,155301643,A,G,169,193286,4704,-0.19,0.04603,PKLR-24h,0.916,human_chimp

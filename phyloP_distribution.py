@@ -5,10 +5,10 @@ import matplotlib.ticker as mticker
 from scipy import stats
 
 # ── user settings ──────────────────────────────────────────────────────────
-INPUT_FILE  = "/home/chengr/Capstone/variant_effect_prediction/data/variants_scored.tsv"   # path to your scored variant file
-SCORE_COL   = "phyloP241"             # column containing PhyloP scores
+INPUT_FILE  = "/data/bentonm_shared/variant_effect_prediction/Variant-Effect-Prediction/data/variants_scored.tsv"   # path to your scored variant file
+SCORE_COL   = "phyloP447"             # column containing PhyloP scores
 SEP         = "\t"                    # "\t" for TSV, "," for CSV
-OUTPUT_PNG  = "phyloP241_distribution.png"
+OUTPUT_PNG  = "phyloP447_distribution.png"
 
 # Significance thresholds (Zoonomia paper: q ≤ 0.05 FDR → phyloP ≥ 2.27)
 SIG_CONSERVED   =  2.27
@@ -122,7 +122,7 @@ def main():
     ax.legend(handles, labels, fontsize=7.5, frameon=False,
               loc="upper left", title="Category  (FDR 5%)", title_fontsize=7.5)
 
-    ax.set_xlabel("PhyloP score (241-way Cactus / Zoonomia)", fontsize=9)
+    ax.set_xlabel("PhyloP score (447-way Cactus / Zoonomia)", fontsize=9)
     ax.set_ylabel("Variant count", fontsize=9)
     ax.set_title(
         "PhyloP 241-way conservation scores across variants",

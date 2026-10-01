@@ -1,8 +1,14 @@
+import argparse
 import pandas as pd
 import requests
 from concurrent.futures import ThreadPoolExecutor
 
 DATA_DIR = "/data/bentonm_shared/variant_effect_prediction/Variant-Effect-Prediction/data"
+
+parser = argparse.ArgumentParser(description="Assign cactus447way conservation levels.")
+parser.add_argument("--input", default=f"{DATA_DIR}/variants_scored.tsv")
+parser.add_argument("--output", default=f"{DATA_DIR}/variants_scored_conservation.tsv")
+args = parser.parse_args()
 
 # ── Species to check, mapped to their name in the cactus447way alignment ────
 # (scientific-name prefix used in the MAF "src" field, e.g. "Pan_troglodytes.CM009238.2")
@@ -84,19 +90,22 @@ def species_aligned_at(chrom, pos_1based):
             continue
         offset = pos_0based - block["chromStart"]
 
-        # mafBlock is a MAF alignment with newlines flattened to ';'. The
-        # reference (hg38) row has no gaps in these reference-projected
-        # blocks, so `offset` indexes directly into every row's text.
+        # mafBlock is a MAF alignment with newlines flattened to ';'.
+        rows = {}
         for line in block["mafBlock"].split(";"):
             line = line.strip()
-            if not line.startswith("s "):
-                continue
-            fields = line.split()
-            src, text = fields[1], fields[-1]
-            name = src.split(".")[0]
-            if name == "hg38" or name not in prefix_to_species:
-                continue
-            if offset < len(text) and text[offset] not in "-Nn":
+            if line.startswith("s "):
+                fields = line.split()
+                rows[fields[1].split(".")[0]] = fields[-1]
+
+        # The hg38 row CAN contain gaps (columns where another species has an
+        # insertion), so the alignment column for this base is the offset-th
+        # non-gap character of the hg38 row, not simply `offset`.
+        hg_cols = [i for i, c in enumerate(rows["hg38"]) if c != "-"]
+        col = hg_cols[offset]
+
+        for name, text in rows.items():
+            if name in prefix_to_species and text[col] not in "-Nn":
                 present.add(prefix_to_species[name])
         break
 
@@ -109,7 +118,7 @@ def assign_conservation_level(coverage):
             level = clade_name
     return level
 
-df = pd.read_csv(f"{DATA_DIR}/variants_scored.tsv", sep="\t")
+df = pd.read_csv(args.input, sep="\t")
 
 positions = list({(row.Chromosome, row.Position) for row in df.itertuples()})
 print(f"Querying cactus447way alignment for {len(positions)} unique positions "
@@ -131,5 +140,5 @@ df["conservation_level"] = pd.Categorical(
 print("\nConservation level counts:")
 print(df["conservation_level"].value_counts().sort_index())
 
-df.to_csv(f"{DATA_DIR}/variants_scored_conservation.tsv", sep="\t", index=False)
+df.to_csv(args.output, sep="\t", index=False)
 print("Saved.")

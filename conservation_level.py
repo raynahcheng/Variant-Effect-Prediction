@@ -6,8 +6,8 @@ from concurrent.futures import ThreadPoolExecutor
 DATA_DIR = "/data/bentonm_shared/variant_effect_prediction/Variant-Effect-Prediction/data"
 
 parser = argparse.ArgumentParser(description="Assign cactus447way conservation levels.")
-parser.add_argument("--input", default=f"{DATA_DIR}/variants_scored.tsv")
-parser.add_argument("--output", default=f"{DATA_DIR}/variants_scored_conservation.tsv")
+parser.add_argument("--input", default=f"{DATA_DIR}/variants_all_phyloP.tsv")
+parser.add_argument("--output", default=f"{DATA_DIR}/variants_all_conservation.tsv")
 args = parser.parse_args()
 
 # ── Species to check, mapped to their name in the cactus447way alignment ────
@@ -37,13 +37,18 @@ SPECIES_HIERARCHY = {
     "elephant":   "Loxodonta_africana",
 }
 
-CLADES = [
+# Each level lists only the species that branch off at that level (closest to
+# most distant from human). A variant gets the most distant level at which AT
+# LEAST ONE species has an aligned base. Requiring every species instead let a
+# single gap or unsequenced (N) base in one genome demote a site, e.g. bonobo
+# is N across the TERT promoter, which put sites aligned in chimp, gorilla,
+# orangutan, macaque, etc. into human_only.
+LINEAGES = [
     ("human_chimp", ["chimp", "bonobo"]),
-    ("great_apes",  ["chimp", "bonobo", "gorilla", "orangutan"]),
-    ("apes",        ["chimp", "bonobo", "gorilla", "orangutan", "gibbon"]),
-    ("primates",    ["chimp", "bonobo", "gorilla", "orangutan", "gibbon",
-                     "macaque", "baboon", "marmoset", "bushbaby"]),
-    ("mammals",     list(SPECIES_HIERARCHY.keys())),
+    ("great_apes",  ["gorilla", "orangutan"]),
+    ("apes",        ["gibbon"]),
+    ("primates",    ["macaque", "baboon", "marmoset", "bushbaby"]),
+    ("mammals",     ["mouse", "rat", "dog", "cow", "elephant"]),
 ]
 
 # ── Query the cactus447way multiple alignment via UCSC's REST API ──────────
@@ -104,6 +109,10 @@ def species_aligned_at(chrom, pos_1based):
         hg_cols = [i for i, c in enumerate(rows["hg38"]) if c != "-"]
         col = hg_cols[offset]
 
+        # "-" = gap (no aligned base). N = base unknown in that assembly, which
+        # says nothing about whether the sequence exists, so it isn't counted
+        # as present either; under the at-least-one rule below it can no
+        # longer demote a site on its own.
         for name, text in rows.items():
             if name in prefix_to_species and text[col] not in "-Nn":
                 present.add(prefix_to_species[name])
@@ -113,9 +122,9 @@ def species_aligned_at(chrom, pos_1based):
 
 def assign_conservation_level(coverage):
     level = "human_only"
-    for clade_name, members in CLADES:
-        if all(sp in coverage for sp in members):
-            level = clade_name
+    for lineage_name, members in LINEAGES:
+        if any(sp in coverage for sp in members):
+            level = lineage_name
     return level
 
 df = pd.read_csv(args.input, sep="\t")
@@ -126,10 +135,16 @@ print(f"Querying cactus447way alignment for {len(positions)} unique positions "
 
 with ThreadPoolExecutor(max_workers=10) as pool:
     coverages = pool.map(lambda cp: species_aligned_at(*cp), positions)
-    levels = {key: assign_conservation_level(cov) for key, cov in zip(positions, coverages)}
+    coverage_by_pos = dict(zip(positions, coverages))
 
 df["conservation_level"] = [
-    levels[(row.Chromosome, row.Position)] for row in df.itertuples()
+    assign_conservation_level(coverage_by_pos[(row.Chromosome, row.Position)])
+    for row in df.itertuples()
+]
+# Which species aligned, so a level can be checked by hand.
+df["aligned_species"] = [
+    ",".join(sp for sp in SPECIES_HIERARCHY if sp in coverage_by_pos[(row.Chromosome, row.Position)])
+    for row in df.itertuples()
 ]
 
 ORDER = ["human_only", "human_chimp", "great_apes", "apes", "primates", "mammals"]

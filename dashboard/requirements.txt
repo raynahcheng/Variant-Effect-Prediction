@@ -1,0 +1,5 @@
+dash>=3.0
+plotly>=6.0
+pandas
+numpy
+dash-bootstrap-components>=2.0

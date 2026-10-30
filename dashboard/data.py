@@ -38,10 +38,20 @@ CLADE_LEVELS = {
     "Apes": "apes",
     "Great Apes": "great_apes",
 }
-CLADES = ["All", *CLADE_LEVELS]
+CLADES = ["Baseline", *CLADE_LEVELS]
 # Fixed color per species group, shared by every page's plots.
-CLADE_COLORS = {"All": "#444444", "Mammals": "#636EFA", "Primates": "#EF553B",
+CLADE_COLORS = {"Baseline": "#444444", "Mammals": "#636EFA", "Primates": "#EF553B",
                 "Apes": "#00CC96", "Great Apes": "#AB63FA"}
+
+# Transposable-element toggle -> TE subsets shown as side-by-side panels
+# (None = no split). Non-TE is everything not annotated "TE", so it includes
+# other_repeat as well as non_repeat.
+TE_VIEWS = {
+    "N/A": [None],
+    "TE only": ["TE"],
+    "Non-TE only": ["Non-TE"],
+    "TE vs non-TE": ["TE", "Non-TE"],
+}
 
 README_DIR = "readmes"
 
@@ -64,6 +74,7 @@ VARIANTS = load_variants()
 # Models with results in the data; ALL_MODELS also includes pending ones.
 ALL_MODELS = list(MODEL_COLUMNS)
 MODELS = [m for m in ALL_MODELS if m in VARIANTS.columns]
+ELEMENTS = sorted(VARIANTS["Element"].unique())
 MODEL_OPTIONS = [
     {"label": m if m in MODELS else f"{m} (no results yet)", "value": m,
      "disabled": m not in MODELS}
@@ -72,9 +83,16 @@ MODEL_OPTIONS = [
 
 
 def filter_by_clade(df: pd.DataFrame, clade: str) -> pd.DataFrame:
-    if clade == "All":
+    if clade == "Baseline":
         return df
     return df[df["conservation_level"] == CLADE_LEVELS[clade]]
+
+
+def filter_by_te(df: pd.DataFrame, te: str | None) -> pd.DataFrame:
+    if te is None:
+        return df
+    is_te = df["te_status"] == "TE"
+    return df[is_te if te == "TE" else ~is_te]
 
 
 def roc_curve(y_true: np.ndarray, score: np.ndarray):

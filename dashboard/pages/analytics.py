@@ -15,6 +15,49 @@ dash.register_page(__name__, path="/analytics", name="Model Analytics", order=1)
 CHARTS = ["ROC curves", "Kendall's tau vs MPRA", "Mean score by species group",
           "Model correlation"]
 
+# Shown above the plot for the selected chart: what it shows, then how it
+# bears on the hypothesis that models predict better in more conserved elements.
+# Species groups run from most conserved (Mammals) to least (Great Apes).
+CHART_SUMMARIES = {
+    "ROC curves": (
+        "How well each model separates functional variants (significant MPRA "
+        "effect, p < 1e-5) from neutral ones. Each curve sweeps the model's score "
+        "threshold; the closer it bends to the top-left corner, and the higher its "
+        "AUC (in the legend), the better. The dotted diagonal is chance (AUC 0.5).",
+        "If conservation helps prediction, AUC should be highest for Mammals and "
+        "fall off through Primates, Apes and Great Apes, with Baseline (all "
+        "variants) in between. Compare the same line style (model) across colors.",
+    ),
+    "Kendall's tau vs MPRA": (
+        "Rank agreement between each model's score and the measured MPRA effect "
+        "size (|Value|). Tau of 1 means the model orders variants exactly as the "
+        "MPRA does; 0 means no relationship. Hover a bar to see how many variants "
+        "it is based on.",
+        "Unlike the ROC, this checks whether models get the size of the effect "
+        "right, not just whether there is one. If conservation helps prediction, "
+        "the bars for each model should shrink from Mammals down to Great Apes.",
+    ),
+    "Mean score by species group": (
+        "The average score each model gives to variants in each species group. "
+        "Models are on different scales, so each has its own panel and y axis; "
+        "compare groups within a panel, not across panels.",
+        "This shows whether models see variants in more conserved elements as "
+        "more damaging. Higher scores for Mammals than for Great Apes fit the "
+        "hypothesis, but on their own they say nothing about accuracy, so read "
+        "them alongside the ROC and Kendall's tau charts.",
+    ),
+    "Model correlation": (
+        "Kendall's tau between every pair of models and the MPRA |Value|, pooled "
+        "over the selected species groups. Red is agreement, blue is disagreement, "
+        "white is none. The \"MPRA |Value|\" row shows how well each model tracks "
+        "the measured effect.",
+        "Select one species group at a time and compare: if conservation helps "
+        "prediction, the MPRA |Value| row should be redder for Mammals than for "
+        "Great Apes, and the models should also agree more with each other in "
+        "conserved elements.",
+    ),
+}
+
 # Color = species group (same as the home page); line style = model, fixed per
 # model so it doesn't change as the selection changes. The TE split gets its
 # own panels rather than another color or line style.
@@ -68,13 +111,88 @@ layout = html.Div(
             ],
             className="mb-4",
         ),
+        dbc.Alert(id="an-summary", color="light", className="mb-3"),
+        html.Div(
+            [
+                dbc.Button("Download PNG", id="an-dl-png", color="secondary", size="sm",
+                           className="me-2"),
+                dbc.Button("Download SVG", id="an-dl-svg", color="secondary", size="sm",
+                           outline=True),
+            ],
+            className="d-flex justify-content-end mb-2",
+        ),
+        # Descriptive filename for the current plot, set alongside the figure.
+        dcc.Store(id="an-filename"),
+        html.Div(id="an-dl-dummy", hidden=True),
         dcc.Graph(id="an-graph", style={"height": "560px"}),
     ]
 )
 
 
+def plot_filename(chart, clades, models, te, elements):
+    """Filename describing the plot, e.g.
+    ROC_curves__Mammals-Primates__AlphaGenome-CADD__TE-split__all-elements."""
+    def clean(s):
+        s = "".join(ch if ch.isalnum() else "-" for ch in str(s).replace("'", ""))
+        return "-".join(filter(None, s.split("-")))
+
+    def join(xs):
+        return "-".join(clean(x) for x in xs)
+
+    parts = [
+        "_".join(filter(None, clean(chart).split("-"))),
+        "all-groups" if set(clades) == set(CLADES) else join(clades),
+        "all-models" if set(models) == set(MODELS) else join(models),
+    ]
+    if te != "N/A":
+        te_part = clean(te)
+        parts.append(te_part if te_part.upper().startswith("TE") else "TE-" + te_part)
+    if not elements:
+        parts.append("all-elements")
+    elif len(elements) <= 3:
+        parts.append(join(elements))
+    else:
+        parts.append(f"{len(elements)}-elements")
+    return "__".join(parts)
+
+
+# Export the plot exactly as it is in the browser (current zoom, hidden traces,
+# size), so no server-side image engine is needed.
+dash.clientside_callback(
+    """
+    function(nPng, nSvg, filename) {
+        const trig = dash_clientside.callback_context.triggered;
+        if (!trig.length || !trig[0].value) { return dash_clientside.no_update; }
+        const format = trig[0].prop_id.startsWith("an-dl-svg") ? "svg" : "png";
+        const gd = document.querySelector("#an-graph .js-plotly-plot");
+        if (gd) {
+            Plotly.downloadImage(gd, {format: format, filename: filename || "plot",
+                                      scale: format === "png" ? 2 : 1});
+        }
+        return "";
+    }
+    """,
+    Output("an-dl-dummy", "children"),
+    Input("an-dl-png", "n_clicks"),
+    Input("an-dl-svg", "n_clicks"),
+    dash.State("an-filename", "data"),
+    prevent_initial_call=True,
+)
+
+
+@callback(Output("an-summary", "children"), Input("an-chart", "value"))
+def update_summary(chart):
+    shows, hypothesis = CHART_SUMMARIES[chart]
+    return [
+        html.P([html.Strong("What this shows: "), shows], className="mb-2"),
+        html.P([html.Strong("Why it matters: "), hypothesis], className="mb-0"),
+    ]
+
+
 @callback(
     Output("an-graph", "figure"),
+    Output("an-filename", "data"),
+    Output("an-graph", "config"),
     Input("an-clades", "value"),
     Input("an-models", "value"),
     Input("an-te", "value"),
@@ -166,4 +284,7 @@ def update_analytics(clades, models, te, elements, chart):
         el_label = f", {len(elements)} elements"
     fig.update_layout(title=f"{chart} ({', '.join(clades)}{te_label}{el_label}, n={len(df):,})",
                       margin=dict(t=60, l=40, r=10, b=40))
-    return fig
+    filename = plot_filename(chart, clades, models, te, elements)
+    # The modebar camera icon uses the same name.
+    config = {"toImageButtonOptions": {"filename": filename, "scale": 2}}
+    return fig, filename, config

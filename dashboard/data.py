@@ -1,7 +1,7 @@
 """Data loading for the dashboard.
 
 Variants come from the MPRA saturation-mutagenesis table joined with model
-scores (data/variants_alphagenome_with_CADD.tsv). The MPRA measurement
+scores (data/variants_alphagenome_with_CADD_with_AVI.tsv). The MPRA measurement
 (Value / P-Value) is the ground truth every model is compared against.
 """
 from pathlib import Path
@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import kendalltau
 
-DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "variants_alphagenome_with_CADD.tsv"
+DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "variants_alphagenome_with_CADD_with_AVI.tsv"
 
 # Model name -> score column in the TSV. A model only shows up in the
 # dashboard once its column exists, so to add Evo2 just add its column to the
@@ -18,12 +18,18 @@ DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "variants_alphagen
 MODEL_COLUMNS = {
     "AlphaGenome": "raw_score",
     "CADD": "CADD_raw_score",
+    "AlphaGenome Atlas": "AVI_SCORE",
     "Evo2": "evo2_score",
 }
 # Scores are oriented so higher = larger predicted effect, which the ROC curve
 # and Kendall's tau vs |Value| assume. AlphaGenome raw_score is signed
 # (direction of effect), so its magnitude is used. Add Evo2's here if needed.
 MODEL_TRANSFORMS = {"AlphaGenome": np.abs}
+
+# Models that could not score deletions (Alt == "-"). Their placeholder score
+# (0 for AlphaGenome Atlas) is set to NaN so those variants are left out of
+# that model's ROC curve, Kendall's tau, mean and correlations only.
+NO_DELETIONS = {"AlphaGenome Atlas"}
 
 # Every variant is kept. For the ROC curves, variants with a significant MPRA
 # effect (the CAGI5 / Kircher et al. 2019 cut-off) are positives and all
@@ -66,6 +72,8 @@ def load_variants(path: Path = DATA_PATH) -> pd.DataFrame:
     for m, col in MODEL_COLUMNS.items():
         if col in df.columns:
             df[m] = MODEL_TRANSFORMS.get(m, lambda s: s)(df[col])
+            if m in NO_DELETIONS:
+                df.loc[df["Alt"] == "-", m] = np.nan
     return df
 
 

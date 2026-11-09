@@ -10,6 +10,11 @@ dash.register_page(__name__, path="/readme", name="Readme", order=2)
 
 BASE = Path(__file__).resolve().parent.parent / README_DIR
 
+# Tab order on this page only; any model not listed goes at the end.
+README_ORDER = ["AlphaGenome Atlas", "AlphaGenome", "Evo2", "CADD"]
+MODELS = sorted(MODELS, key=lambda m: README_ORDER.index(m) if m in README_ORDER
+                else len(README_ORDER))
+
 layout = html.Div(
     [
         html.H2("Readme"),
@@ -26,6 +31,6 @@ layout = html.Div(
 
 @callback(Output("readme-body", "children"), Input("readme-tabs", "active_tab"))
 def show_readme(model):
-    path = BASE / f"{model.lower()}.md"
+    path = BASE / f"{model.lower().replace(' ', '_')}.md"
     text = path.read_text() if path.exists() else f"# {model}\n\nNo readme yet."
-    return dcc.Markdown(text, link_target="_blank")
+    return dcc.Markdown(text, link_target="_blank", className="readme-md")

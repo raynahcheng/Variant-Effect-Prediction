@@ -40,8 +40,10 @@ layout = html.Div(
             "phyloP conservation scores (phyloP447), conservation level annotations (conservation_level), "
             "the species each site aligns to in the UCSC Cactus 447-way alignment (aligned_species), "
             "transposable element status from RepeatMasker (te_status, rep_class, rep_family, rep_name, "
-            "and rep_divergence), and raw scores from AlphaGenome (raw_score) and CADD (CADD_raw_score "
-            "and CADD_PHRED). Evo2 scores will be added once they are available."],
+            "and rep_divergence), and raw scores from AlphaGenome (raw_score), CADD (CADD_raw_score "
+            "and CADD_PHRED) and AlphaGenome Atlas (AVI_SCORE; deletions could not be scored and are "
+            "0 here, so they are excluded from its analytics). Evo2 scores will be added once they "
+            "are available."],
             style={"textAlign": "center", "maxWidth": "900px", "margin": "0 auto 1rem"},
         ),
         html.Div(

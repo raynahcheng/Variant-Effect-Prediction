@@ -61,7 +61,12 @@ CHART_SUMMARIES = {
 # Color = species group (same as the home page); line style = model, fixed per
 # model so it doesn't change as the selection changes. The TE split gets its
 # own panels rather than another color or line style.
-MODEL_DASHES = dict(zip(ALL_MODELS, ["solid", "dash", "dashdot", "dot"]))
+MODEL_DASHES = {"AlphaGenome Atlas": "solid", "AlphaGenome": "longdash", "CADD": "dash",
+                "Evo2": "dashdot"}
+# Order of models in the dropdown, legends, bars and heatmap: AlphaGenome Atlas
+# first, then the rest in their usual order.
+MODEL_ORDER = ["AlphaGenome Atlas", *(m for m in ALL_MODELS if m != "AlphaGenome Atlas")]
+ORDERED_MODELS = [m for m in MODEL_ORDER if m in MODELS]
 
 layout = html.Div(
     [
@@ -79,7 +84,10 @@ layout = html.Div(
                     [
                         html.Label("Models", className="fw-bold"),
                         dcc.Dropdown(
-                            id="an-models", options=MODEL_OPTIONS, value=MODELS, multi=True
+                            id="an-models",
+                            options=sorted(MODEL_OPTIONS,
+                                           key=lambda o: MODEL_ORDER.index(o["value"])),
+                            value=ORDERED_MODELS, multi=True
                         ),
                     ],
                     md=2,
@@ -142,7 +150,7 @@ def plot_filename(chart, clades, models, te, elements):
     parts = [
         "_".join(filter(None, clean(chart).split("-"))),
         "all-groups" if set(clades) == set(CLADES) else join(clades),
-        "all-models" if set(models) == set(MODELS) else join(models),
+        "all-models" if set(models) == set(ORDERED_MODELS) else join(models),
     ]
     if te != "N/A":
         te_part = clean(te)
@@ -200,7 +208,7 @@ def update_summary(chart):
     Input("an-chart", "value"),
 )
 def update_analytics(clades, models, te, elements, chart):
-    models = [m for m in (models or []) if m in MODELS] or MODELS
+    models = [m for m in ORDERED_MODELS if m in (models or [])] or ORDERED_MODELS
     clades = [c for c in CLADES if c in (clades or [])] or CLADES
     panels = TE_VIEWS.get(te, [None])
     # Gene elements filter every plot; none selected means all of them.

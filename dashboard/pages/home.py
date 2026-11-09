@@ -10,6 +10,7 @@ TEXT_STYLE = {"textAlign": "center", "maxWidth": "800px", "margin": "0 auto 1rem
 ALPHAGENOME_URL = "https://deepmind.google/science/alphagenome/"
 CADD_URL = "https://cadd.gs.washington.edu/"
 EVO2_URL = "https://arcinstitute.org/tools/evo"
+ATLAS_URL = "https://alphagenome.google/atlas"
 
 def figure_block(filename, text):
     return html.Div(
@@ -52,12 +53,14 @@ layout = html.Div([
     ),
     html.P(
         [
-            "We tested three different models: ",
+            "We tested four different models: ",
             html.A("CADD", href=CADD_URL, target="_blank", style=LINK_STYLE),
             ", ",
             html.A("Evo2", href=EVO2_URL, target="_blank", style=LINK_STYLE),
-            ", and ",
+            ", ",
             html.A("AlphaGenome", href=ALPHAGENOME_URL, target="_blank", style=LINK_STYLE),
+            ", and ",
+            html.A("AlphaGenome Atlas", href=ATLAS_URL, target="_blank", style=LINK_STYLE),
             ", against a base dataset of variants taken from MPRA with known "
             "effects.",
         ],
@@ -82,6 +85,13 @@ layout = html.Div([
         "alone, but is trained to predict functional genomic signals such as "
         "gene expression and chromatin accessibility, and scores a variant "
         "by comparing predictions for the reference and alternate sequences.",
+        style=TEXT_STYLE,
+    ),
+    html.P(
+        "AlphaGenome Atlas is a precomputed map of every possible single-letter "
+        "change in the human genome, whose AlphaGenome Variant Impact (AVI) score "
+        "combines AlphaGenome's predictions with AlphaMissense and conservation "
+        "into a single number per variant.",
         style=TEXT_STYLE,
     ),
     html.P(

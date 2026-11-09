@@ -1,88 +1,210 @@
 ## About Evo2
 
-Evo2 is a DNA sequence model that learns patterns from genomic sequence. For our project, we use it to score variants from an MPRA dataset and ask whether those scores agree with experimentally measured regulatory effects. We compare Evo2 with CADD and AlphaGenome, both overall and across groups defined by evolutionary conservation.
+Evo2 is a biological foundation model trained on DNA sequences from a wide range of organisms. Unlike traditional variant effect predictors that rely on predefined annotations, Evo2 learns patterns directly from genomic sequences.
 
-An important distinction: **Evo2 scores reflect the model's preference for one DNA sequence over another.** They are not direct predictions of gene expression, disease risk, or pathogenicity.
+The model uses a deep learning architecture called StripedHyena 2, which allows it to analyze long DNA sequences and learn relationships between nucleotides.
 
-## Data used in our analysis
+Evo2 can be used to investigate how genetic mutations affect sequence patterns learned during training, including mutations in non-coding regulatory regions.
 
-Our starting point is the project's MPRA dataset, including variants with both significant and nonsignificant experimental effects. Keeping both groups lets us evaluate whether Evo2 can distinguish variants with statistically significant MPRA results, rather than testing only on variants already known to have an effect.
+This project uses GRCh38 (hg38) and the Evo2-40B model accessed through the NVIDIA API.
 
-The dashboard organizes variants into four conservation groups: **great apes, apes, primates, and mammals**. These groups come from cross-species sequence alignments. A position counts as present in a species if it has an aligned base; the base does not need to match the human reference.
+## How does Evo2 score variants?
 
-### Input fields
+Evo2 evaluates a variant by comparing the model's predicted likelihood of the reference nucleotide with that of the alternative nucleotide.
 
-| Field | Purpose |
-|:--|:--|
-| Chromosome and position | Locate the variant in GRCh38 |
-| REF and ALT | Identify the reference and alternate alleles |
-| MPRA measurement | Experimental regulatory effect for comparison |
-| MPRA p-value | Label significant effects for classification analysis |
-| Conservation group | Filter results by evolutionary conservation |
+For each single-nucleotide variant (SNV), our scoring pipeline:
 
-The scoring approach described here is for **single-nucleotide variants (SNVs)**. Indels need separate handling and should not be assumed to work with the same scoring procedure. Column names in the actual data files may differ from the labels above.
+1. Extracts a 4,096-base-pair sequence surrounding the variant from the GRCh38 reference genome.  
+2. Confirms that the reference nucleotide matches the reference genome.  
+3. Uses Evo2 to obtain logits for the reference and alternative nucleotides.  
+4. Calculates the difference between alternative and reference logits.  
+5. Repeats the calculation using the reverse-complement sequence.  
+6. Averages the forward and reverse scores to obtain the final Evo2 score.
 
-## How we score variants
+The scoring formula is:
 
-Before scoring, we retrieve the surrounding sequence from the **GRCh38 human reference genome** and check that the REF allele matches the reference at the reported position. This catches coordinate and allele mismatches before they enter the analysis.
+**Forward score:**
 
-For each eligible SNV, we calculate two scores:
+`Evo2_Forward = ALT_Logit − REF_Logit`
 
-1. **Forward:** the alternate-allele logit minus the reference-allele logit, using the upstream sequence context.
-2. **Reverse complement:** the corresponding alternate-minus-reference logit difference, using reverse-complemented downstream context.
+**Reverse score:**
 
-We take the average as the final score:
+`Evo2_Reverse = RC_ALT_Logit − RC_REF_Logit`
 
-$$
-\text{Evo2 mean score} = \frac{\text{forward score} + \text{reverse-complement score}}{2}
-$$
+**Final score:**
 
-A positive score means Evo2 favors the alternate allele under this scoring method; a negative score means it favors the reference allele. A larger absolute score indicates a stronger preference, **not necessarily a larger change in expression**. We keep the forward and reverse-complement scores separately so we can check how closely the two orientations agree.
+`Evo2_Mean = (Evo2_Forward + Evo2_Reverse) / 2`
 
-## Output and matching
+A negative score indicates that the alternative nucleotide is less favored by the model than the reference nucleotide in the evaluated sequence context. A positive score indicates that the alternative nucleotide is more favored.
 
-The Evo2 output retains the original variant identifiers and adds the forward score, reverse-complement score, and mean score. For analysis of effect magnitude, we can also calculate the absolute mean score.
+## What is the output of Evo2?
 
-We match Evo2 predictions to the shared dataset using the full variant key: **chromosome, position, REF, and ALT**. This matters because the same genomic variant can appear in more than one experimental element or cell type, with a different MPRA measurement for each record. We preserve those measurements rather than collapsing them into a single value.
+Our Evo2 pipeline produces a comma-separated file (`.csv`) containing the variant information, experimental MPRA values, and Evo2 prediction scores.
 
-Before plotting results, we check the number of matched and unmatched records and make sure the model comparisons use the same eligible variants wherever possible.
+The primary scoring file is:
 
-## Reading the dashboard plots
+`evo2_40b_api_checkpoint.csv`
 
-### Kendall's tau
+| Column | Meaning |
+| :---- | :---- |
+| Variant\_ID | Unique genomic variant identifier |
+| Chromosome | Chromosome containing the variant |
+| Position | 1-based genomic position in GRCh38 |
+| Ref | Reference nucleotide |
+| Alt | Alternative nucleotide |
+| Element | Regulatory element associated with the variant |
+| MPRA\_Value | Experimental MPRA effect measurement |
+| P\_Value | Statistical significance of the MPRA measurement |
+| GRCh38\_REF | Reference nucleotide verified against GRCh38 |
+| Evo2\_Forward\_REF\_Logit | Reference nucleotide logit in the forward orientation |
+| Evo2\_Forward\_ALT\_Logit | Alternative nucleotide logit in the forward orientation |
+| Evo2\_Forward | Forward ALT minus REF logit difference |
+| Evo2\_Reverse\_REF\_Logit | Reference nucleotide logit in the reverse-complement orientation |
+| Evo2\_Reverse\_ALT\_Logit | Alternative nucleotide logit in the reverse-complement orientation |
+| Evo2\_Reverse | Reverse-complement ALT minus REF logit difference |
+| Evo2\_Mean | Average of forward and reverse scores |
+| Timestamp | UTC time when the variant was scored |
 
-Kendall's tau tells us how closely the rankings of Evo2 scores and MPRA measurements agree. For the magnitude-based comparison, we use the absolute mean Evo2 score and absolute MPRA effect. A higher positive tau means the two rankings are more consistent. It does not mean Evo2 predicts the direction of expression change.
+### **Notes**
 
-### ROC curves and AUROC
+* Higher positive values mean the alternative nucleotide is more favored relative to the reference; lower negative values mean it is less favored.  
+* Evo2 scores are not PHRED-scaled and do not have established pathogenicity thresholds.  
+* The same genomic SNV can occur in multiple MPRA elements. The sequence-based Evo2 score is calculated once per unique genomic variant and can be matched back to multiple experimental rows.  
+* Failed scoring attempts are recorded separately in `evo2_40b_api_errors.csv`.  
+* Successfully scored variants are saved continuously so interrupted jobs can resume without repeating completed predictions.
 
-We label an MPRA result significant when its **p-value is below 0.05**. We then use the absolute mean Evo2 score to rank variants and calculate the ROC curve and area under the curve (AUROC). An AUROC near 0.5 suggests little ability to distinguish the two classes; higher values indicate better separation on the evaluated dataset.
+## How to run Evo2 with your own dataset:
 
-### Precision–recall
+### 1. Prepare your variants
 
-Precision–recall analysis is useful when the number of significant variants differs from the number of nonsignificant variants. We interpret AUPRC alongside the proportion of significant variants in each group.
+Confirm that the dataset uses the GRCh38 (hg38) reference genome.
 
-### Conservation groups and model comparisons
+The input dataset should include:
 
-The dashboard lets users compare models and select conservation groups. We interpret differences carefully because the groups do not all contain the same number or mix of variants. The same caution applies when comparing transposable and nontransposable elements.
+* `Chromosome`  
+* `Position`  
+* `Ref`  
+* `Alt`
 
-## Using Evo2 with another dataset
+The `Element`, `Value`, and `P-Value` columns are retained when available.
 
-This section outlines the workflow we used; it is **not a copy-and-run script**. Exact commands depend on the final scoring code and computing environment.
+Only SNVs with single A, C, G, or T reference and alternative nucleotides are eligible for this pipeline.
 
-1. Prepare an SNV table with GRCh38 chromosome, position, REF, and ALT fields.
-2. Retrieve GRCh38 sequence context and confirm that each REF allele matches the reference.
-3. Run Evo2 scoring in the forward and reverse-complement orientations.
-4. Calculate the mean score and save all three score columns alongside the original variant identifiers.
-5. Join the scores back to experimental measurements using chromosome, position, REF, and ALT.
-6. If MPRA measurements are available, calculate Kendall's tau and classification metrics using consistent definitions.
-7. Add conservation-group annotations if you want to reproduce the dashboard's stratified comparisons.
+Our project contains **29,444 SNV rows**, extracted from the larger dataset of 44,647 experimental variant rows.
 
-For this project, we first tested Evo2 in Google Colab, then moved the workflow to Baylor’s Kodiak computing environment to support longer scoring runs on the full MPRA dataset. The same scoring and matching steps are used to prepare Evo2 results for comparison with CADD and AlphaGenome in our dashboard. Anyone adapting the workflow to another dataset should use the final validated scoring scripts and confirm the model version, dependencies, and sequence-context settings before running it.
+The input file is:
 
-## How Evo2 fits into our project
+`results/evo2_stratified_snvs.csv`
 
-Our project asks whether variant-effect prediction models agree more closely with experimental MPRA measurements at genomic positions conserved across broader evolutionary groups. Evo2 contributes a sequence-based perspective alongside CADD and AlphaGenome. By joining all three sets of predictions to the same variants, we can compare their performance using Kendall’s tau, ROC curves, and conservation-group filters in the dashboard.
+### 2. Prepare the reference genome
 
-These comparisons also help us identify where model predictions differ from experimental results. Evo2 learns patterns in DNA sequence, whereas MPRA measures regulatory activity directly, so agreement is not guaranteed. We retain the forward and reverse-complement scores to examine orientation differences, and we interpret comparisons in light of the different sample sizes and variant compositions across conservation groups.
+Download or provide the GRCh38 reference FASTA and ensure that it is accessible from the computing environment.
 
-Our Evo2 workflow currently focuses on SNVs. As we finalize the merged dataset and plots, we will verify that the scored variants match the dashboard data before drawing conclusions about Evo2’s performance relative to the other models. This keeps the dashboard focused on our central research question: **how does evolutionary conservation relate to the accuracy of computational variant-effect predictions?**
+Our pipeline uses:
+
+`reference/hg38.fa`
+
+For every variant, the script extracts 2,048 bases upstream, the reference nucleotide, and 2,047 bases downstream.
+
+The variant is evaluated using its surrounding genomic sequence.
+
+Reference nucleotide mismatches and ambiguous sequence contexts are recorded as errors rather than silently scored.
+
+### 3. Configure Evo2 through the NVIDIA API
+
+Our project uses the NVIDIA-hosted Evo2 API rather than loading the entire model directly onto Kodiak GPUs.
+
+The scoring script is:
+
+`evo2_api_kodiak.py`
+
+A valid NVIDIA API key must be available through the environment variable:
+
+`NVIDIA_API_KEY`
+
+On Kodiak, the key is loaded from a private environment file rather than being written directly into the Python script.
+
+The script sends reference sequence contexts to the API and retrieves nucleotide logits used to calculate forward and reverse-complement scores.
+
+API access, rate limits, and usage quotas should be checked before submitting large scoring jobs.
+
+### 4. Submit the scoring job on Kodiak
+
+Our scoring pipeline uses the PBS job scheduler.
+
+The job script is:
+
+`evo2_api_kodiak.pbs`
+
+Submit the job using:
+
+```
+qsub evo2_api_kodiak.pbs
+```
+
+Check the job status:
+
+```
+qstat -u "$USER"
+```
+
+The PBS script runs the scoring program with the following arguments:
+
+```
+python evo2_api_kodiak.py \
+  --input results/evo2_stratified_snvs.csv \
+  --fasta reference/hg38.fa \
+  --output results/evo2_40b_api_checkpoint.csv \
+  --errors results/evo2_40b_api_errors.csv \
+  --limit 0
+```
+
+The `--limit 0` option instructs the program to attempt all remaining eligible variants.
+
+The current PBS configuration requests two CPU cores, 8 GB of memory, and an eight-hour walltime. Longer scoring runs may require multiple submissions.
+
+### 5. Monitor scoring progress
+
+The checkpoint file is updated after each successfully scored variant.
+
+To count completed variants:
+
+```
+wc -l results/evo2_40b_api_checkpoint.csv
+```
+
+Subtract one for the header row.
+
+To calculate progress:
+
+```
+import pandas as pd
+
+df = pd.read_csv("results/evo2_40b_api_checkpoint.csv")
+
+completed = df["Variant_ID"].nunique()
+total = 29444
+
+print(f"Completed: {completed:,} / {total:,}")
+print(f"Remaining: {total-completed:,}")
+print(f"Progress: {completed/total*100:.2f}%")
+```
+
+If the PBS job ends before scoring is complete, it can be resubmitted using the same checkpoint file. The script skips previously completed genomic variants.
+
+Failed variants should be reviewed separately because they are not automatically considered completed.
+
+### 6. Organize final results
+
+Once scoring is complete, results will be organized in a folder named `RESULTS`.
+
+Planned outputs include:
+
+* `Evo2_All_Scores.tsv` — individual Evo2 predictions and variant metadata.  
+* `FINAL_Combined_All_Models.tsv` — Evo2, AlphaGenome, CADD, AVI, MPRA, and conservation data.  
+* `Evo2_Conservation/` — separate files for conservation groups such as mammals, primates, great apes, apes, human-chimp, and human-only.  
+* `Evo2_Scoring_Summary.txt` — completed variants, missing scores, and scoring errors.
+
+These outputs will support comparisons of Evo2 predictions against experimental MPRA effects and conservation levels.
+
+&nbsp;

@@ -1,7 +1,7 @@
 """Data loading for the dashboard.
 
 Variants come from the MPRA saturation-mutagenesis table joined with model
-scores (data/variants_alphagenome_with_CADD_with_AVI.tsv). The MPRA measurement
+scores (data/variants_all_models.tsv). The MPRA measurement
 (Value / P-Value) is the ground truth every model is compared against.
 """
 from pathlib import Path
@@ -10,20 +10,24 @@ import numpy as np
 import pandas as pd
 from scipy.stats import kendalltau
 
-DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "variants_alphagenome_with_CADD_with_AVI.tsv"
+DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "variants_all_models.tsv"
 
 # Model name -> score column in the TSV. A model only shows up in the
-# dashboard once its column exists, so to add Evo2 just add its column to the
-# TSV (rename here if it is not called "evo2_score").
+# dashboard once its column exists.
 MODEL_COLUMNS = {
     "AlphaGenome": "raw_score",
     "CADD": "CADD_raw_score",
     "AlphaGenome Atlas": "AVI_SCORE",
     "Evo2": "evo2_score",
 }
+# Evo2 scores SNVs and deletions separately (8 bp deletion window). Each
+# variant has exactly one of these columns filled, so evo2_score is built by
+# taking the SNV score and falling back to the deletion score.
+EVO2_SOURCE_COLUMNS = ["Evo2_SNV_Abs", "Evo2_Deletion_8bp_Abs"]
 # Scores are oriented so higher = larger predicted effect, which the ROC curve
 # and Kendall's tau vs |Value| assume. AlphaGenome raw_score is signed
-# (direction of effect), so its magnitude is used. Add Evo2's here if needed.
+# (direction of effect), so its magnitude is used. The Evo2 columns are
+# already absolute values.
 MODEL_TRANSFORMS = {"AlphaGenome": np.abs}
 
 # Models that could not score deletions (Alt == "-"). Their placeholder score
@@ -69,6 +73,9 @@ def load_variants(path: Path = DATA_PATH) -> pd.DataFrame:
     df["chrom"] = "chr" + df["Chromosome"]
     df["abs_value"] = df["Value"].abs()
     df["label"] = np.where(df["P-Value"] < P_THRESHOLD, "functional", "neutral")
+    if all(c in df.columns for c in EVO2_SOURCE_COLUMNS):
+        snv, deletion = EVO2_SOURCE_COLUMNS
+        df["evo2_score"] = df[snv].fillna(df[deletion])
     for m, col in MODEL_COLUMNS.items():
         if col in df.columns:
             df[m] = MODEL_TRANSFORMS.get(m, lambda s: s)(df[col])

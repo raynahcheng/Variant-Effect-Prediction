@@ -19,7 +19,7 @@ AVI combines several sources of evidence into one score per variant:
 
 The score is decomposed into additive contributions from 18 modalities (e.g. Splicing, AlphaMissense, ChIP-TF, DNASE-seq, Cactus), so you can see which kind of evidence drives each variant's score. The top contributing modality is reported for every variant.
 
-- The Atlas only covers **single-nucleotide variants**. Deletions are not scored, so in our table they have `AVI_SCORE` = 0 and are excluded from the AlphaGenome Atlas results on the Model Analytics page.
+- The Atlas only covers single-nucleotide variants. Deletions are not scored, so in our table they have `AVI_SCORE` = 0 and are excluded from the AlphaGenome Atlas results on the Model Analytics page.
 - Scores are precomputed, so there are no window-size or scorer choices to make, unlike running AlphaGenome directly.
 
 ## What is the output of AlphaGenome Atlas?

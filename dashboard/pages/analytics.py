@@ -63,9 +63,10 @@ CHART_SUMMARIES = {
 # own panels rather than another color or line style.
 MODEL_DASHES = {"AlphaGenome Atlas": "solid", "AlphaGenome": "longdash", "CADD": "dash",
                 "Evo2": "dashdot"}
-# Order of models in the dropdown, legends, bars and heatmap: AlphaGenome Atlas
-# first, then the rest in their usual order.
-MODEL_ORDER = ["AlphaGenome Atlas", *(m for m in ALL_MODELS if m != "AlphaGenome Atlas")]
+# Order of models in the dropdown, legends, bars and heatmap; any model not
+# listed goes at the end.
+MODEL_ORDER = ["AlphaGenome Atlas", "AlphaGenome", "Evo2", "CADD"]
+MODEL_ORDER += [m for m in ALL_MODELS if m not in MODEL_ORDER]
 ORDERED_MODELS = [m for m in MODEL_ORDER if m in MODELS]
 
 layout = html.Div(

@@ -26,7 +26,7 @@ CHART_SUMMARIES = {
         "AUC (in the legend), the better. The dotted diagonal is chance (AUC 0.5).",
         "If conservation helps prediction, AUC should be highest for Mammals and "
         "fall off through Primates, Apes and Great Apes, with Baseline (all "
-        "variants) in between. Compare the same line style (model) across colors.",
+        "variants) in between. Compare the same marker shape (model) across colors.",
     ),
     "Kendall's tau vs MPRA": (
         "Rank agreement between each model's score and the measured MPRA effect "
@@ -58,16 +58,20 @@ CHART_SUMMARIES = {
     ),
 }
 
-# Color = species group (same as the home page); line style = model, fixed per
+# Color = species group (same as the home page); marker shape = model, fixed per
 # model so it doesn't change as the selection changes. The TE split gets its
-# own panels rather than another color or line style.
-MODEL_DASHES = {"AlphaGenome Atlas": "solid", "AlphaGenome": "longdash", "CADD": "dash",
-                "Evo2": "dashdot"}
+# own panels rather than another color or shape.
+MODEL_SYMBOLS = {"AlphaGenome Atlas": "star", "AlphaGenome": "triangle-up", "CADD": "square",
+                 "Evo2": "diamond"}
+# Shapes for any model not listed above.
+EXTRA_SYMBOLS = ["circle", "cross", "x", "pentagon", "hexagon", "triangle-down"]
 # Order of models in the dropdown, legends, bars and heatmap; any model not
 # listed goes at the end.
 MODEL_ORDER = ["AlphaGenome Atlas", "AlphaGenome", "Evo2", "CADD"]
 MODEL_ORDER += [m for m in ALL_MODELS if m not in MODEL_ORDER]
 ORDERED_MODELS = [m for m in MODEL_ORDER if m in MODELS]
+for _i, _m in enumerate(m for m in MODEL_ORDER if m not in MODEL_SYMBOLS):
+    MODEL_SYMBOLS[_m] = EXTRA_SYMBOLS[_i % len(EXTRA_SYMBOLS)]
 
 layout = html.Div(
     [
@@ -235,8 +239,11 @@ def update_analytics(clades, models, te, elements, chart):
                     continue
                 for m in models:
                     fpr, tpr = roc_curve(y, sub[m].to_numpy())
-                    fig.add_scatter(x=fpr, y=tpr, mode="lines", legendgroup=c,
-                                    line=dict(color=CLADE_COLORS[c], dash=MODEL_DASHES[m]),
+                    # Only ~a dozen markers per curve; one per point would be a smear.
+                    fig.add_scatter(x=fpr, y=tpr, mode="lines+markers", legendgroup=c,
+                                    line=dict(color=CLADE_COLORS[c], width=1.5),
+                                    marker=dict(symbol=MODEL_SYMBOLS[m], size=9,
+                                                color=CLADE_COLORS[c], maxdisplayed=12),
                                     name=f"{c} · {m}" + (f" · {p}" if p else "")
                                     + f" (AUC {auc(fpr, tpr):.3f})", row=1, col=col)
             fig.add_scatter(x=[0, 1], y=[0, 1], mode="lines", name="Chance",

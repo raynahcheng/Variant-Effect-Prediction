@@ -1,0 +1,137 @@
+"""Data loading for the dashboard.
+
+Variants come from the MPRA saturation-mutagenesis table joined with model
+scores (data/variants_all_models.tsv). The MPRA measurement
+(Value / P-Value) is the ground truth every model is compared against.
+"""
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from scipy.stats import kendalltau
+
+DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "variants_all_models.tsv"
+
+# Model name -> score column in the TSV. A model only shows up in the
+# dashboard once its column exists.
+MODEL_COLUMNS = {
+    "AlphaGenome": "raw_score",
+    "CADD": "CADD_raw_score",
+    "AlphaGenome Atlas": "AVI_SCORE",
+    "Evo2": "evo2_score",
+}
+# Evo2 scores SNVs and deletions separately (8 bp deletion window). Each
+# variant has exactly one of these columns filled, so evo2_score is built by
+# taking the SNV score and falling back to the deletion score.
+EVO2_SOURCE_COLUMNS = ["Evo2_SNV_Abs", "Evo2_Deletion_8bp_Abs"]
+# Scores are oriented so higher = larger predicted effect, which the ROC curve
+# and Kendall's tau vs |Value| assume. AlphaGenome raw_score is signed
+# (direction of effect), so its magnitude is used. The Evo2 columns are
+# already absolute values.
+MODEL_TRANSFORMS = {"AlphaGenome": np.abs}
+
+# Models that could not score deletions (Alt == "-"). Their placeholder score
+# (0 for AlphaGenome Atlas) is set to NaN so those variants are left out of
+# that model's ROC curve, Kendall's tau, mean and correlations only.
+NO_DELETIONS = {"AlphaGenome Atlas"}
+
+# Every variant is kept. For the ROC curves, variants with a significant MPRA
+# effect (the CAGI5 / Kircher et al. 2019 cut-off) are positives and all
+# others are negatives.
+P_THRESHOLD = 1e-5
+LABELS = ["functional", "neutral"]
+
+# Dropdown label -> conservation_level value, most to least conserved.
+CLADE_LEVELS = {
+    "Mammals": "mammals",
+    "Primates": "primates",
+    "Apes": "apes",
+    "Great Apes": "great_apes",
+}
+CLADES = ["Baseline", *CLADE_LEVELS]
+# Fixed color per species group, shared by every page's plots.
+CLADE_COLORS = {"Baseline": "#444444", "Mammals": "#636EFA", "Primates": "#EF553B",
+                "Apes": "#00CC96", "Great Apes": "#AB63FA"}
+
+# Transposable-element toggle -> TE subsets shown as side-by-side panels
+# (None = no split). Non-TE is everything not annotated "TE", so it includes
+# other_repeat as well as non_repeat.
+TE_VIEWS = {
+    "N/A": [None],
+    "TE only": ["TE"],
+    "Non-TE only": ["Non-TE"],
+    "TE vs non-TE": ["TE", "Non-TE"],
+}
+
+README_DIR = "readmes"
+
+
+def load_variants(path: Path = DATA_PATH) -> pd.DataFrame:
+    df = pd.read_csv(path, sep="\t", dtype={"Chromosome": str})
+    df.insert(0, "variant_id", df["Chromosome"] + ":" + df["Position"].astype(str)
+              + ":" + df["Ref"] + ">" + df["Alt"] + ":" + df["Element"])
+    df["chrom"] = "chr" + df["Chromosome"]
+    df["abs_value"] = df["Value"].abs()
+    df["label"] = np.where(df["P-Value"] < P_THRESHOLD, "functional", "neutral")
+    if all(c in df.columns for c in EVO2_SOURCE_COLUMNS):
+        snv, deletion = EVO2_SOURCE_COLUMNS
+        df["evo2_score"] = df[snv].fillna(df[deletion])
+    for m, col in MODEL_COLUMNS.items():
+        if col in df.columns:
+            df[m] = MODEL_TRANSFORMS.get(m, lambda s: s)(df[col])
+            if m in NO_DELETIONS:
+                df.loc[df["Alt"] == "-", m] = np.nan
+    return df
+
+
+VARIANTS = load_variants()
+
+# Models with results in the data; ALL_MODELS also includes pending ones.
+ALL_MODELS = list(MODEL_COLUMNS)
+MODELS = [m for m in ALL_MODELS if m in VARIANTS.columns]
+ELEMENTS = sorted(VARIANTS["Element"].unique())
+MODEL_OPTIONS = [
+    {"label": m if m in MODELS else f"{m} (no results yet)", "value": m,
+     "disabled": m not in MODELS}
+    for m in ALL_MODELS
+]
+
+
+def filter_by_clade(df: pd.DataFrame, clade: str) -> pd.DataFrame:
+    if clade == "Baseline":
+        return df
+    return df[df["conservation_level"] == CLADE_LEVELS[clade]]
+
+
+def filter_by_te(df: pd.DataFrame, te: str | None) -> pd.DataFrame:
+    if te is None:
+        return df
+    is_te = df["te_status"] == "TE"
+    return df[is_te if te == "TE" else ~is_te]
+
+
+def roc_curve(y_true: np.ndarray, score: np.ndarray):
+    """Exact ROC curve for scores on any scale; NaN scores are dropped."""
+    keep = ~np.isnan(score)
+    y_true, score = y_true[keep], score[keep]
+    order = np.argsort(-score, kind="mergesort")
+    y, s = y_true[order], score[order]
+    # One point per distinct threshold.
+    last = np.r_[np.flatnonzero(np.diff(s)), len(s) - 1]
+    tps = np.cumsum(y)[last]
+    fps = (last + 1) - tps
+    tpr = np.r_[0, tps / max(y.sum(), 1)]
+    fpr = np.r_[0, fps / max((1 - y).sum(), 1)]
+    return fpr, tpr
+
+
+def auc(fpr: np.ndarray, tpr: np.ndarray) -> float:
+    return float(np.trapezoid(tpr, fpr))
+
+
+def kendall_tau(df: pd.DataFrame, model: str, target: str = "abs_value") -> tuple[float, int]:
+    """Kendall's tau between a model score and MPRA |Value|, plus the n used."""
+    sub = df[[target, model]].dropna()
+    if len(sub) < 3:
+        return np.nan, len(sub)
+    return float(kendalltau(sub[target], sub[model])[0]), len(sub)

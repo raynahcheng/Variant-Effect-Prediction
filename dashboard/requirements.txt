@@ -4,3 +4,4 @@ pandas
 numpy
 dash-bootstrap-components>=2.0
 scipy
+gunicorn
